@@ -1,0 +1,19 @@
+<% content_for :title, "Receipts" %>
+<h1>Receipts</h1>
+
+<% if @recipts.empty? %>
+  <p class="muted">No receipts yet. <%= link_to "Import one", new_recipt_path %> or run <code>bin/rails db:seed</code>.</p>
+<% else %>
+  <div class="cards">
+    <% @recipts.each do |r| %>
+      <%= link_to r, class: "card card-link" do %>
+        <div class="card-title"><%= r.title %></div>
+        <div class="muted"><%= r.opened_at&.strftime("%-d %b %Y, %-l:%M %p") %><%= " · #{r.server}" if r.server %></div>
+        <div class="card-stats">
+          <span><strong><%= money r.total_cents %></strong> total</span>
+          <span class="due"><strong><%= money r.balance_due_cents %></strong> due</span>
+        </div>
+      <% end %>
+    <% end %>
+  </div>
+<% end %>

@@ -1,0 +1,200 @@
+<% content_for :title, @recipt.title %>
+<% total, paid, due = @recipt.total_cents, @recipt.paid_cents, @recipt.balance_due_cents %>
+
+<div class="receipt-page" data-controller="selection">
+  <nav class="receipt-nav">
+    <%= link_to "← All receipts", recipts_path %>
+    <%= button_to "Delete receipt", @recipt, method: :delete, class: "linklike danger",
+          form: { data: { turbo_confirm: "Delete this receipt?" } } %>
+  </nav>
+
+  <div class="receipt-col">
+  <article class="receipt">
+    <header class="r-head">
+      <div class="r-title">RECEIPT</div>
+      <% if @recipt.venue.present? %><div><%= @recipt.venue %></div><% end %>
+    </header>
+
+    <div class="r-meta">
+      <% if @recipt.opened_at %>
+        <div><span>Opened:</span> <%= @recipt.opened_at.strftime("%-l:%M %p %-d %b %y") %></div>
+      <% end %>
+      <% if @recipt.server %>
+        <div><span>Server:</span> <%= @recipt.server %></div>
+      <% end %>
+    </div>
+
+    <table class="r-table r-items">
+      <thead>
+        <tr>
+          <th class="check">
+            <input type="checkbox" aria-label="Select all unpaid items"
+                   data-selection-target="all" data-action="selection#toggleAll">
+          </th>
+          <th>Item</th>
+          <th class="num">Paid</th>
+          <th class="num">Due</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @recipt.recipt_items.each do |item| %>
+          <tr class="<%= "is-paid" if item.paid %>" id="<%= dom_id item %>"
+              title="<%= "Paid by #{item.paid_by.name}" if item.paid_by %>">
+            <td class="check">
+              <input type="checkbox" name="item_ids[]" value="<%= item.id %>" form="pay-form"
+                     id="select_<%= dom_id item %>" aria-label="Select <%= item.name %>"
+                     data-selection-target="item" data-action="selection#refresh"
+                     data-price="<%= item.price %>" <%= "disabled" if item.paid %>>
+            </td>
+            <td>
+              <div class="r-name">
+                <label for="select_<%= dom_id item %>"><%= item.name %></label>
+                <% if item.paid_by %><span class="r-payer"><%= item.paid_by.name %></span><% end %>
+              </div>
+            </td>
+            <td class="num"><%= amount(item.price) if item.paid %></td>
+            <td class="num"><%= item.paid ? "0.00" : amount(item.price) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+
+    <div class="r-rule"></div>
+    <dl class="r-totals">
+      <div><dt>Sub Total</dt><dd>$ <%= amount total %></dd></div>
+      <div class="r-strong"><dt>TOTAL</dt><dd>$ <%= amount total %></dd></div>
+      <div><dt>PAID</dt><dd>$ <%= amount paid %></dd></div>
+      <div class="r-strong"><dt>BALANCE DUE</dt><dd>$ <%= amount due %></dd></div>
+    </dl>
+
+  </article>
+
+  <%= form_with url: recipt_payment_path(@recipt), id: "pay-form",
+        data: { action: "turbo:submit-end->selection#submitted" } do |f| %>
+    <div class="paybar" hidden data-selection-target="bar">
+      <div class="paybar-summary">
+        <strong data-selection-target="count"></strong>
+        <span data-selection-target="total"></span>
+        <button type="button" class="linklike" data-action="selection#clear">Clear</button>
+      </div>
+      <button type="button" class="btn" data-action="selection#openDialog">Pay</button>
+    </div>
+
+    <dialog class="pay-dialog" data-selection-target="dialog">
+      <h3>Who's paying?</h3>
+      <p class="r-muted" data-selection-target="summary"></p>
+
+      <%# New-person row comes first in the DOM so pressing Enter in it submits it. %>
+      <div class="pay-new">
+        <%= text_field_tag :new_payer_name, nil, placeholder: "New person", autocomplete: "off",
+              required: true, data: { selection_target: "newName" } %>
+        <%= f.button "Add & pay", class: "btn" %>
+      </div>
+
+      <% if @people.any? %>
+        <div class="pay-people">
+          <% @people.each do |person| %>
+            <%= f.button person.name, name: "paid_by_id", value: person.id, formnovalidate: true, class: "pay-person" %>
+          <% end %>
+        </div>
+      <% end %>
+
+      <button type="button" class="linklike pay-cancel" data-action="selection#closeDialog">Cancel</button>
+    </dialog>
+  <% end %>
+  </div>
+
+  <aside class="receipt-side">
+    <section class="side-card">
+      <h2>Paid so far</h2>
+      <dl class="side-list">
+        <% if (on_receipt = @recipt.paid_on_receipt_cents).positive? %>
+          <div><dt class="muted">On receipt (invoiced)</dt><dd><%= amount on_receipt %></dd></div>
+        <% end %>
+        <% @recipt.payments.each do |person, cents| %>
+          <div><dt><%= person.name %></dt><dd><%= amount cents %></dd></div>
+        <% end %>
+        <% if @recipt.payments.empty? %>
+          <div class="muted"><dt>No one yet. Tick items, then Pay.</dt></div>
+        <% end %>
+        <div class="side-total"><dt>Still due</dt><dd class="due"><%= amount due %></dd></div>
+      </dl>
+    </section>
+
+    <section class="side-card">
+      <h2>Receipt photos</h2>
+      <% if @recipt.photos.attached? %>
+        <div class="photo-grid">
+          <% @recipt.photos.each do |photo| %>
+            <figure class="photo">
+              <%= link_to rails_blob_path(photo, disposition: "inline"), target: "_blank", rel: "noopener",
+                    title: "#{photo.filename} · uploaded #{photo.created_at.strftime("%-d %b %Y, %-l:%M %p")}" do %>
+                <% if photo.image? && !photo.content_type.in?(%w[image/heic image/heif]) %>
+                  <%= image_tag rails_blob_path(photo, disposition: "inline"), alt: photo.filename.to_s, loading: "lazy" %>
+                <% else %>
+                  <span class="photo-file"><%= photo.filename.extension_without_delimiter.upcase %></span>
+                <% end %>
+              <% end %>
+              <%= button_to "×", recipt_photo_path(@recipt, photo), method: :delete, class: "photo-remove",
+                    title: "Remove #{photo.filename}", form: { data: { turbo_confirm: "Remove this photo?" } } %>
+            </figure>
+          <% end %>
+        </div>
+      <% else %>
+        <p class="muted photo-empty">No photos yet.</p>
+      <% end %>
+      <%= form_with url: recipt_photos_path(@recipt), class: "photo-upload", data: { controller: "auto-upload" } do |f| %>
+        <label class="btn btn-ghost">
+          + Add photo
+          <%= f.file_field :photos, multiple: true, accept: "image/*,application/pdf", hidden: true,
+                data: { action: "change->auto-upload#submit" } %>
+        </label>
+      <% end %>
+    </section>
+
+    <section class="side-card">
+      <h2>Totals by item</h2>
+      <table class="side-table">
+        <thead>
+          <tr><th>Item</th><th class="num">Qty</th><th class="num">Total</th></tr>
+        </thead>
+        <% @recipt.items_by_category.each do |category, items| %>
+          <tbody>
+            <tr class="side-cat"><td colspan="3"><%= category %></td></tr>
+            <% items.group_by(&:name).sort_by { |_, i| [ -i.size, i.first.position.to_i ] }.each do |name, units| %>
+              <% line_total = units.sum(&:price) %>
+              <% line_paid = units.select(&:paid).sum(&:price) %>
+              <% partly_paid = line_paid.positive? && line_paid < line_total %>
+              <tr class="<%= "side-paid" if line_paid == line_total && line_total.positive? %> <%= "has-progress" if partly_paid %>">
+                <td><%= name %></td>
+                <td class="num"><%= units.size %> × <%= amount units.first.price %></td>
+                <td class="num"><%= amount line_total %></td>
+              </tr>
+              <% if partly_paid %>
+                <tr class="side-progress">
+                  <td colspan="3">
+                    <div class="progress-row">
+                      <div class="progress-track" role="progressbar" aria-label="<%= name %> paid"
+                           aria-valuemin="0" aria-valuemax="<%= line_total %>" aria-valuenow="<%= line_paid %>">
+                        <div class="progress-fill" style="width: <%= (line_paid * 100.0 / line_total).round(1) %>%"></div>
+                      </div>
+                      <span class="paid-amount"
+                            title="<%= units.count(&:paid) %> of <%= units.size %> paid">
+                        <%= units.count(&:paid) %>/<%= units.size %> · <%= amount line_paid %> paid
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              <% end %>
+            <% end %>
+            <tr class="side-subtotal">
+              <td><%= category %> subtotal</td>
+              <td class="num"><%= items.size %></td>
+              <td class="num"><%= amount items.sum(&:price) %></td>
+            </tr>
+          </tbody>
+        <% end %>
+      </table>
+    </section>
+  </aside>
+</div>

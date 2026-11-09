@@ -1,0 +1,11 @@
+<% content_for :title, "Import receipt" %>
+<h1>Import a receipt</h1>
+<p class="muted">Paste the receipt text. Each "2 @ 13.00" line is split into separate items so you can assign them to different people.</p>
+
+<%= form_with url: recipts_path, class: "stack" do |f| %>
+  <%= f.label :venue, "Venue (optional)" %>
+  <%= f.text_field :venue, placeholder: "e.g. Izakaya on Smith St" %>
+  <%= f.label :text, "Receipt text" %>
+  <%= f.text_area :text, rows: 18, class: "mono", required: true %>
+  <%= f.submit "Import", class: "btn" %>
+<% end %>
